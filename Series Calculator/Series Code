@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visualizador de Séries</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.8.0/math.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-slate-50 flex items-center justify-center min-h-screen p-6 font-sans">
+    <div class="bg-white rounded-3xl shadow-xl p-8 w-full max-w-4xl border border-slate-100">
+        <h1 class="text-3xl font-extrabold text-slate-800 text-center mb-8 tracking-tight">Visualizador de Séries Matemáticas</h1>
+        
+        <div class="flex flex-col sm:flex-row gap-4 mb-4">
+            <input type="text" id="input-serie" placeholder="Digite a série centrada em n. Ex: 1 / (n^2) ou (0.5)^n" class="flex-1 border-2 border-slate-200 rounded-xl px-5 py-3 text-lg text-slate-700 focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/20 transition-all">
+            <button id="btn-calcular" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-xl transition-all shadow-md hover:shadow-lg transform hover:-translate-y-0.5">Analisar</button>
+        </div>
+        
+        <div id="msg-erro" class="hidden bg-red-50 text-red-600 border border-red-200 rounded-lg p-4 text-center mb-6 font-medium"></div>
+        
+        <div id="painel-resultados" class="hidden">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-8">
+                <div class="bg-slate-50 rounded-2xl p-6 text-center border border-slate-100 shadow-sm">
+                    <p class="text-slate-500 text-xs font-bold uppercase tracking-widest mb-1">Soma Aproximada</p>
+                    <p id="valor-soma" class="text-4xl font-black text-slate-800 mt-2"></p>
+                </div>
+                <div class="bg-slate-50 rounded-2xl p-6 text-center border border-slate-100 shadow-sm">
+                    <p class="text-slate-500 text-xs font-bold uppercase tracking-widest mb-1">Comportamento</p>
+                    <p id="valor-comportamento" class="text-4xl font-black mt-2"></p>
+                </div>
+            </div>
+            
+            <div class="w-full h-[450px] relative bg-white border border-slate-100 rounded-2xl p-4 shadow-sm">
+                <canvas id="grafico-series"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const inputSerie = document.getElementById('input-serie');
+        const btnCalcular = document.getElementById('btn-calcular');
+        const msgErro = document.getElementById('msg-erro');
+        const painelResultados = document.getElementById('painel-resultados');
+        const valorSoma = document.getElementById('valor-soma');
+        const valorComportamento = document.getElementById('valor-comportamento');
+        const ctx = document.getElementById('grafico-series').getContext('2d');
+        let graficoAtual = null;
+
+        inputSerie.addEventListener('keypress', (evento) => {
+            if (evento.key === 'Enter') {
+                btnCalcular.click();
+            }
+        });
+
+        btnCalcular.addEventListener('click', () => {
+            const expressao = inputSerie.value.trim();
+            msgErro.classList.add('hidden');
+            painelResultados.classList.add('hidden');
+
+            if (!expressao) {
+                msgErro.textContent = "Por favor, insira uma expressão matemática.";
+                msgErro.classList.remove('hidden');
+                return;
+            }
+
+            const maxTermos = 500;
+            const eixosX = [];
+            const eixosY = [];
+            const termos = [];
+            let somaAcumulada = 0;
+
+            try {
+                const noCompilado = math.parse(expressao).compile();
+
+                for (let n = 1; n <= maxTermos; n++) {
+                    const valorTermo = noCompilado.evaluate({ n: n });
+                    
+                    if (isNaN(valorTermo) || (!isFinite(valorTermo) && n === 1)) {
+                        throw new Error("Expressão resultou em valor numérico inválido.");
+                    }
+                    
+                    termos.push(valorTermo);
+                    somaAcumulada += valorTermo;
+                    eixosY.push(somaAcumulada);
+                    eixosX.push(n);
+                }
+            } catch (erro) {
+                msgErro.textContent = "Expressão inválida. Certifique-se de usar a letra 'n' como variável.";
+                msgErro.classList.remove('hidden');
+                return;
+            }
+
+            painelResultados.classList.remove('hidden');
+
+            const ultimoTermo = Math.abs(termos[termos.length - 1]);
+            const penultimoTermo = Math.abs(termos[termos.length - 2]);
+            let ehConvergente = false;
+
+            if (Number.isFinite(somaAcumulada)) {
+                if (ultimoTermo < 1e-8) {
+                    ehConvergente = true;
+                } else {
+                    const razao = ultimoTermo / penultimoTermo;
+                    if (razao < 0.999) {
+                        ehConvergente = true;
+                    } else if (razao <= 1.001) {
+                        const limiteP = Math.log(penultimoTermo / ultimoTermo) / Math.log(maxTermos / (maxTermos - 1));
+                        ehConvergente = limiteP > 1.05;
+                    }
+                }
+            }
+
+            if (ehConvergente) {
+                valorSoma.textContent = somaAcumulada.toFixed(5);
+                valorComportamento.textContent = "Convergente";
+                valorComportamento.className = "text-4xl font-black mt-2 text-emerald-500";
+            } else {
+                valorSoma.textContent = "∞";
+                valorComportamento.textContent = "Divergente";
+                valorComportamento.className = "text-4xl font-black mt-2 text-rose-500";
+            }
+
+            if (graficoAtual) {
+                graficoAtual.destroy();
+            }
+
+            graficoAtual = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: eixosX,
+                    datasets: [{
+                        label: 'Soma Parcial (Sn)',
+                        data: eixosY,
+                        borderColor: '#4f46e5',
+                        backgroundColor: 'rgba(79, 70, 229, 0.08)',
+                        borderWidth: 3,
+                        pointRadius: 0,
+                        pointHoverRadius: 6,
+                        fill: true,
+                        tension: 0.3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                            titleFont: { size: 14, family: 'sans-serif' },
+                            bodyFont: { size: 14, family: 'sans-serif' },
+                            padding: 12,
+                            cornerRadius: 8,
+                            displayColors: false
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: {
+                                display: false
+                            },
+                            title: {
+                                display: true,
+                                text: 'Quantidade de Termos (n)',
+                                font: { size: 13, weight: 'bold' },
+                                color: '#64748b'
+                            }
+                        },
+                        y: {
+                            border: {
+                                dash: [4, 4]
+                            },
+                            grid: {
+                                color: '#f1f5f9'
+                            },
+                            title: {
+                                display: true,
+                                text: 'Soma Acumulada',
+                                font: { size: 13, weight: 'bold' },
+                                color: '#64748b'
+                            }
+                        }
+                    }
+                }
+            });
+        });
+    </script>
+</body>
+</html>
